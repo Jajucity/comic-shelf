@@ -17,7 +17,7 @@ namespace ComicShelf
 {
     static class Updater
     {
-        public const string AppVersion = "5.4";            // 이 프로그램의 판
+        public const string AppVersion = "5.4.1";            // 이 프로그램의 판
         public const string Owner = "Jajucity";                 // GitHub 계정 이름 (비어 있으면 업데이트 확인 안 함)
         public const string Repo = "comic-shelf";       // GitHub 저장소 이름
         public const string AssetName = "ComicShelf.zip";

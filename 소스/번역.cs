@@ -449,10 +449,11 @@ $best.Lines | % { $_.Text }
     class TranslateDialog : Form
     {
         readonly Image crop, page;
-        readonly TextBox origBox, transBox, answerBox;
+        readonly TextBox origBox, transBox, directBox;
         readonly Label status;
         readonly Button aiBtn, googleBtn, gTextBtn, askBtn;
-        public string Result { get { return transBox.Text; } }
+        // 맨 아래 '직접 적기' 칸에 글이 있으면 그 글을, 없으면 번역 칸 글을 넣음
+        public string Result { get { return directBox.Text.Trim().Length > 0 ? directBox.Text : transBox.Text; } }
 
         public TranslateDialog(Image crop, Image page, bool coverWhite)
         {
@@ -477,6 +478,7 @@ $best.Lines | % { $_.Text }
             int x = 312;
             var langLbl = Lbl("원문 언어", x, 18);
             langLbl.Size = new Size(80, 22);
+            langLbl.Anchor = AnchorStyles.Top | AnchorStyles.Left;   // 창이 넓어질 때 늘어나서 옆 고르기 칸을 덮지 않게
             Controls.Add(langLbl);
             var lang = new ComboBox();
             lang.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -512,16 +514,21 @@ $best.Lines | % { $_.Text }
             imgBtn.Click += delegate { OpenGoogleImage(); };
 
             status = Lbl("", x, 340 + y0);
-            status.Size = new Size(680, 62);
+            status.Size = new Size(680, 44);
             status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             Controls.Add(status);
 
-            answerBox = Box(x, 404 + y0, 110);
-            answerBox.ReadOnly = true;
-            answerBox.BackColor = Theme.Card;
-            answerBox.ForeColor = Theme.Text;
-            answerBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-            Controls.Add(answerBox);
+            // 번역 없이 글자만 바꾸고 싶을 때 여기에 적음 → 이 글이 그대로 들어감
+            var directLbl = Lbl("직접 적기 — 번역 없이 바꿀 글을 여기에 적으면, 이 글이 그대로 들어가요", x, 386 + y0);
+            directLbl.ForeColor = Theme.Accent;
+            Controls.Add(directLbl);
+            directBox = Box(x, 410 + y0, 104);
+            directBox.BackColor = Theme.Card;
+            directBox.ForeColor = Theme.Text;
+            directBox.Font = Theme.F(12f);
+            directBox.AccessibleName = "직접 적기";
+            directBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            Controls.Add(directBox);
 
             var ok = Theme.MakeButton("넣기", true);
             ok.DialogResult = DialogResult.OK;
@@ -581,7 +588,9 @@ $best.Lines | % { $_.Text }
             return tb;
         }
 
-        void ShowHint(string s) { status.Text = s; }
+        readonly ToolTip hintTip = new ToolTip();
+        // 안내 글 (길어서 잘리면 마우스를 올려 전부 봄)
+        void ShowHint(string s) { status.Text = s; hintTip.SetToolTip(status, s); }
 
         // 꺼진 단추는 회색으로 (주황이면 눌러지는 것처럼 보여서)
         static void PaintBtn(Button b)
@@ -633,8 +642,8 @@ $best.Lines | % { $_.Text }
             {
                 origBox.Text = o;
                 transBox.Text = tr;
-                answerBox.Text = note.Length > 0 ? "AI 메모: " + note : "";
-                ShowHint(tr.Length == 0 ? "이 칸에서 글자를 찾지 못했어요." : "AI 번역을 채웠어요. 자연스럽게 다듬고 '넣기'를 눌러요.");
+                ShowHint((tr.Length == 0 ? "이 칸에서 글자를 찾지 못했어요." : "AI 번역을 채웠어요. 자연스럽게 다듬고 '넣기'를 눌러요.") +
+                         (note.Length > 0 ? "  AI 메모: " + note : ""));
             });
         }
 
@@ -673,8 +682,8 @@ $best.Lines | % { $_.Text }
             string o = origBox.Text, cur = transBox.Text, ans = "";
             Work("AI에게 물어보는 중…", delegate { ans = Translate.Ask(crop, page, o, cur, q); }, delegate
             {
-                answerBox.Text = "질문: " + q.Trim() + "\r\n\r\n" + ans.Replace("\n", "\r\n");
                 ShowHint("");
+                MessageBox.Show(this, "질문: " + q.Trim() + "\n\n" + ans, "AI 답");
             });
         }
     }
