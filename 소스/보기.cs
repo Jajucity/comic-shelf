@@ -27,6 +27,10 @@ namespace ComicShelf
         readonly Label zoomLabel;
         TopBar topBar;
         bool wasFull;
+        EpLayout lay;
+        Control editBar;
+        Button orderBtn, spaceBtn, editBtn;
+        Label editHint;
         dynamic music;
         bool musicOn;
 
@@ -44,6 +48,16 @@ namespace ComicShelf
             view.EndText = "— " + ep + "화 끝 —";
             view.DeleteRequested += DeleteItem;
             view.EditRequested += EditItem;
+            view.GoogleImageRequested += GoogleImage;
+            view.ReplaceRequested += ReplaceWithTranslated;
+            lay = EpLayout.Load(Store.EpisodeDir(comic, ep));
+            view.EpisodeLayout = lay;
+            view.OrderChanged += delegate(List<string> list)
+            {
+                SaveLayout(list);
+                view.SetItems(Store.EpisodeItems(comic, ep));
+            };
+            view.LayoutChanged += delegate { SaveLayout(view.Paths); };
             view.ZoomChanged += delegate { zoomLabel.Text = "보기 " + (int)Math.Round(view.Zoom * 100) + "%"; };
             int idx = eps.IndexOf(ep);
             view.PrevButton.Enabled = idx > 0;
@@ -120,6 +134,10 @@ namespace ComicShelf
             };
             musicVol.Released += delegate { Edits.Set("음악소리", ((int)Math.Round(musicVol.Value * 100)).ToString()); };
 
+            editBtn = Theme.MakeButton("✎  편집", false);
+            editBtn.Margin = new Padding(0, 0, 8, 0);
+            new ToolTip().SetToolTip(editBtn, "그림 순서 바꾸기, 그림 사이 빈 공간, 만화 칸 테두리, 바탕색");
+            editBtn.Click += delegate { ShowEdit(!editBar.Visible); };
             var add = Theme.MakeButton("+  넣기", true);
             add.AccessibleName = "넣기";
             var addMenu = new ContextMenuStrip();
@@ -131,7 +149,11 @@ namespace ComicShelf
             bar.RightArea.Controls.Add(resetBtn);
             bar.RightArea.Controls.Add(musicBtn);
             bar.RightArea.Controls.Add(musicVol);
+            bar.RightArea.Controls.Add(editBtn);
             bar.RightArea.Controls.Add(add);
+            editBar = BuildEditBar();
+            editBar.Visible = false;
+            Controls.Add(editBar);
             Controls.Add(bar);
 
             UpdateListButton();
@@ -141,6 +163,122 @@ namespace ComicShelf
         }
 
         public void FocusView() { view.Focus(); }
+
+        // ── 편집 줄 ──
+        void SaveLayout(IList<string> paths)
+        {
+            try { lay.Save(Store.EpisodeDir(comic, ep), paths); }
+            catch (Exception ex) { MessageBox.Show(FindForm(), "배치를 저장하지 못했어요.\n" + ex.Message, "편집"); }
+        }
+
+        void ShowEdit(bool on)
+        {
+            editBar.Visible = on;
+            editBtn.BackColor = on ? Theme.Accent : Theme.Card;
+            editBtn.ForeColor = on ? Color.FromArgb(30, 20, 10) : Theme.Text;
+            SetEditMode(on ? StripView.EditMode.Order : StripView.EditMode.None);
+            view.Focus();
+        }
+
+        void SetEditMode(StripView.EditMode m)
+        {
+            view.Mode = m;
+            foreach (var b in new[] { orderBtn, spaceBtn })
+            {
+                bool act = (b == orderBtn && m == StripView.EditMode.Order) || (b == spaceBtn && m == StripView.EditMode.Space);
+                b.BackColor = act ? Theme.Accent : Theme.Card;
+                b.ForeColor = act ? Color.FromArgb(30, 20, 10) : Theme.Text;
+            }
+            editHint.Text = m == StripView.EditMode.Order ? "그림을 끌어서 놓을 자리(주황 줄)에 놓으면 순서가 바뀌어요."
+                          : m == StripView.EditMode.Space ? "그림을 아래로 끌면 그 위에 빈 공간이 생겨요. 위로 끌면 줄어요."
+                          : "";
+        }
+
+        Control BuildEditBar()
+        {
+            var p = new FlowLayoutPanel();
+            p.Dock = DockStyle.Top;
+            p.AutoSize = true;
+            p.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            p.WrapContents = true;
+            p.BackColor = Color.FromArgb(40, 42, 50);
+            p.Padding = new Padding(12, 8, 12, 6);
+            Func<string, Label> lbl = delegate(string s)
+            {
+                var l = new Label(); l.Text = s; l.AutoSize = true; l.ForeColor = Theme.SubText; l.Font = Theme.F(10.5f);
+                l.Margin = new Padding(14, 9, 4, 0); return l;
+            };
+            Func<int, int, int, int, NumericUpDown> num = delegate(int min, int max, int val, int inc)
+            {
+                var n = new NumericUpDown(); n.Minimum = min; n.Maximum = max; n.Value = Math.Max(min, Math.Min(max, val)); n.Increment = inc;
+                n.Width = 70; n.Font = Theme.F(11f); n.Margin = new Padding(0, 5, 0, 0); n.BackColor = Theme.Card; n.ForeColor = Theme.Text; return n;
+            };
+
+            orderBtn = Theme.MakeButton("↕  순서 바꾸기", false);
+            spaceBtn = Theme.MakeButton("⇕  빈 공간 만들기", false);
+            orderBtn.Margin = spaceBtn.Margin = new Padding(0, 0, 6, 0);
+            orderBtn.Click += delegate { SetEditMode(StripView.EditMode.Order); view.Focus(); };
+            spaceBtn.Click += delegate { SetEditMode(StripView.EditMode.Space); view.Focus(); };
+            p.Controls.Add(orderBtn); p.Controls.Add(spaceBtn);
+
+            p.Controls.Add(lbl("모든 그림 사이 간격"));
+            var gap = num(0, 1000, lay.Gap, 10);
+            gap.AccessibleName = "모든 그림 사이 간격";
+            gap.ValueChanged += delegate { lay.Gap = (int)gap.Value; view.RefreshLayout(); SaveLayout(view.Paths); };
+            p.Controls.Add(gap);
+
+            p.Controls.Add(lbl("칸 테두리 두께"));
+            var bor = num(0, 40, lay.Border, 1);
+            bor.AccessibleName = "칸 테두리 두께";
+            bor.ValueChanged += delegate { lay.Border = (int)bor.Value; view.RefreshLayout(); SaveLayout(view.Paths); };
+            p.Controls.Add(bor);
+            var sw = new Panel(); sw.Size = new Size(26, 26); sw.Margin = new Padding(6, 6, 0, 0); sw.BackColor = lay.BorderColor; sw.BorderStyle = BorderStyle.FixedSingle;
+            var colBtn = Theme.MakeButton("테두리 색", false);
+            colBtn.Margin = new Padding(4, 0, 0, 0);
+            EventHandler pick = delegate
+            {
+                using (var cd = new ColorDialog())
+                {
+                    cd.Color = lay.BorderColor; cd.FullOpen = true;
+                    if (cd.ShowDialog(FindForm()) != DialogResult.OK) return;
+                    lay.BorderColor = cd.Color; sw.BackColor = cd.Color;
+                    if (lay.Border == 0) bor.Value = 3;   // 색을 골랐으면 보이게
+                    view.RefreshLayout(); SaveLayout(view.Paths);
+                }
+            };
+            colBtn.Click += pick; sw.Click += pick;
+            p.Controls.Add(sw); p.Controls.Add(colBtn);
+
+            p.Controls.Add(lbl("바탕"));
+            var back = new ComboBox();
+            back.DropDownStyle = ComboBoxStyle.DropDownList;
+            back.Items.AddRange(new object[] { "그대로 (어둡게)", "흰 종이", "검은 종이" });
+            back.SelectedIndex = lay.Back;
+            back.Width = 140; back.Font = Theme.F(10.5f); back.Margin = new Padding(0, 6, 0, 0);
+            back.AccessibleName = "바탕";
+            back.SelectedIndexChanged += delegate { lay.Back = back.SelectedIndex; view.RefreshLayout(); SaveLayout(view.Paths); };
+            p.Controls.Add(back);
+
+            var clear = Theme.MakeButton("직접 만든 빈 공간 모두 없애기", false);
+            clear.Margin = new Padding(14, 0, 6, 0);
+            clear.Click += delegate
+            {
+                if (lay.Extra.Count == 0) return;
+                if (MessageBox.Show(FindForm(), "이 화에서 직접 만든 빈 공간을 모두 없앨까요?", "편집", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+                lay.Extra.Clear(); view.RefreshLayout(); SaveLayout(view.Paths);
+            };
+            p.Controls.Add(clear);
+            var done = Theme.MakeButton("다 했어요", true);
+            done.Click += delegate { ShowEdit(false); };
+            p.Controls.Add(done);
+
+            editHint = lbl("");
+            editHint.ForeColor = Theme.Accent;
+            p.SetFlowBreak(done, true);
+            editHint.Margin = new Padding(2, 6, 0, 2);
+            p.Controls.Add(editHint);
+            return p;
+        }
 
         Panel BuildSide()
         {
@@ -371,6 +509,78 @@ namespace ComicShelf
                 if (ed.ShowDialog(FindForm()) == DialogResult.OK)
                     view.SetItems(Store.EpisodeItems(comic, ep));
             }
+            view.Focus();
+        }
+
+        // 구글 번역 사이트의 '이미지' 번역: 그림을 복사해 두고 사이트를 열어 줌 (사용자가 붙여 넣기 → 번역된 그림 받기)
+        void GoogleImage(int index, string path)
+        {
+            try
+            {
+                using (var b = Edits.Compose(path)) Clipboard.SetImage(b);
+            }
+            catch (Exception ex) { MessageBox.Show(FindForm(), "그림을 복사하지 못했어요.\n" + ex.Message, "구글 이미지 번역"); return; }
+            try { System.Diagnostics.Process.Start("https://translate.google.com/?sl=auto&tl=ko&op=images"); }
+            catch (Exception ex) { MessageBox.Show(FindForm(), "인터넷 창을 열지 못했어요.\n" + ex.Message, "구글 이미지 번역"); return; }
+            if (Edits.Get("구글이미지안내", "") != "1")
+            {
+                MessageBox.Show(FindForm(),
+                    "구글 번역 사이트가 열렸어요. 이렇게 해 주세요.\n\n" +
+                    "1. 사이트에서 Ctrl+V 를 눌러 그림을 붙여 넣어요. (그림은 이미 복사돼 있어요)\n" +
+                    "2. 번역된 그림이 나오면 '번역본 다운로드' 단추를 눌러 받아요.\n" +
+                    "3. 이 프로그램으로 돌아와 그림을 오른쪽 클릭 → '번역된 그림으로 바꾸기…' 에서 받은 파일을 골라요.\n\n" +
+                    "원본 그림은 그대로 남아서, 그림 고치기의 '원래대로 (처음 그림)' 단추로 언제든 되돌릴 수 있어요.\n" +
+                    "(이 안내는 처음 한 번만 보여요)",
+                    "구글 이미지 번역", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Edits.Set("구글이미지안내", "1");
+            }
+        }
+
+        // 받은 번역 그림을 이 칸의 '고친 판'으로 넣음 (원본 파일은 그대로)
+        void ReplaceWithTranslated(int index, string path)
+        {
+            string file;
+            using (var dlg = new OpenFileDialog())
+            {
+                dlg.Title = "번역된 그림 파일 고르기";
+                dlg.Filter = "그림 파일|*.png;*.jpg;*.jpeg;*.webp;*.bmp|모든 파일|*.*";
+                string down = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                if (Directory.Exists(down)) dlg.InitialDirectory = down;
+                if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+                file = dlg.FileName;
+            }
+            try
+            {
+                Size orig;
+                using (var o = Pics.Load(path)) orig = o.Size;
+                using (var src = Pics.Load(file))
+                using (var dst = new Bitmap(orig.Width, orig.Height))
+                {
+                    using (var g = Graphics.FromImage(dst))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.DrawImage(src, 0, 0, orig.Width, orig.Height);
+                    }
+                    view.ReleaseAll();
+                    // 번역 그림에 이미 자막·브러시가 들어 있으니, 예전 고친 것은 휴지통으로 (되살릴 수 있음)
+                    foreach (var f in new[] { Edits.BasePath(path), Store.OverlayPath(path), Edits.ObjsPath(path) })
+                        if (File.Exists(f)) Store.Recycle(f);
+                    string bp = Edits.BasePath(path);
+                    Directory.CreateDirectory(Path.GetDirectoryName(bp));
+                    dst.Save(bp, System.Drawing.Imaging.ImageFormat.Png);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(FindForm(), "바꾸지 못했어요.\n" + ex.Message, "번역된 그림으로 바꾸기");
+                view.SetItems(Store.EpisodeItems(comic, ep));
+                return;
+            }
+            view.SetItems(Store.EpisodeItems(comic, ep));
+            MessageBox.Show(FindForm(),
+                (index + 1) + "번째 그림을 번역된 그림으로 바꿨어요.\n원본은 그대로 남아 있어서, 그림 고치기의 '원래대로 (처음 그림)' 단추로 되돌릴 수 있어요.",
+                "번역된 그림으로 바꾸기", MessageBoxButtons.OK, MessageBoxIcon.Information);
             view.Focus();
         }
     }
@@ -965,9 +1175,39 @@ namespace ComicShelf
 
         public event Action<int, string> DeleteRequested;
         public event Action<int, string> EditRequested;
+        public event Action<int, string> GoogleImageRequested;
+        public event Action<int, string> ReplaceRequested;
         public event Action ZoomChanged;
         public event Action<bool> VideoFullChanged;
         VideoBox fullBox;
+
+        // ── 편집 (순서 바꾸기·빈 공간 만들기·칸 테두리·바탕) ──
+        public enum EditMode { None, Order, Space }
+        EpLayout layout = new EpLayout();
+        EditMode mode;
+        int inset;                 // 종이 바탕일 때 옆 여백
+        int paperBottom;           // 종이 바탕이 끝나는 곳
+        int dragIdx = -1, dropIdx = -1, spaceIdx = -1, dragGrabY, dragMouseY, spaceStartY, spaceStartExtra;
+        readonly Timer edgeTimer;  // 끌다가 위·아래 끝에 가면 저절로 내려감
+        public event Action<List<string>> OrderChanged;
+        public event Action LayoutChanged;
+
+        public EpLayout EpisodeLayout { get { return layout; } set { layout = value ?? new EpLayout(); Relayout(); } }
+        public void RefreshLayout() { Relayout(); }
+        public EditMode Mode
+        {
+            get { return mode; }
+            set
+            {
+                mode = value; dragIdx = -1; dropIdx = -1; spaceIdx = -1;
+                if (Capture) Capture = false;
+                Cursor = Cursors.Default;
+                PositionChildren(); Invalidate();
+            }
+        }
+        double LScale { get { return dispW / (double)EpLayout.RefWidth; } }
+        int InnerW { get { return Math.Max(20, dispW - 2 * inset); } }
+        public List<string> Paths { get { return items.Select(i => i.Path).ToList(); } }
 
         public StripView()
         {
@@ -1017,6 +1257,18 @@ namespace ComicShelf
             fastTimer = new Timer();
             fastTimer.Interval = 250;
             fastTimer.Tick += delegate { fastTimer.Stop(); fast = false; Invalidate(); };
+            edgeTimer = new Timer();
+            edgeTimer.Interval = 40;
+            edgeTimer.Tick += delegate
+            {
+                if (dragIdx < 0 && !(mode == EditMode.Space && Capture)) { edgeTimer.Stop(); return; }
+                int h = View.Height, step = 0;
+                if (dragMouseY < 50) step = -(50 - dragMouseY);
+                else if (dragMouseY > h - 50) step = dragMouseY - (h - 50);
+                if (step == 0) return;
+                SetScrollY(sy + step);
+                if (dragIdx >= 0) UpdateDrop();
+            };
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -1119,10 +1371,16 @@ namespace ComicShelf
             var v = View;
             int baseW = Math.Max(100, Math.Min(MaxBase, v.Width - 40));
             dispW = Math.Max(40, (int)Math.Round(baseW * zoom));
-            int y = 0;
-            foreach (var it in items)
+            int gap = (int)Math.Round(layout.Gap * LScale);
+            inset = layout.Paper ? gap : 0;
+            int innerW = InnerW;
+            int y = layout.Paper ? gap : 0;
+            for (int i = 0; i < items.Count; i++)
             {
-                int h = Math.Max(1, (int)Math.Round((double)it.Natural.Height * dispW / it.Natural.Width));
+                var it = items[i];
+                if (i > 0) y += gap;
+                y += (int)Math.Round(layout.ExtraOf(it.Path) * LScale);
+                int h = Math.Max(1, (int)Math.Round((double)it.Natural.Height * innerW / it.Natural.Width));
                 if (it.Kind == Kind.Video)
                 {
                     int cap = Math.Max(240, (int)((v.Height - 40) * zoom));
@@ -1132,6 +1390,8 @@ namespace ComicShelf
                 it.Height = h;
                 y += h;
             }
+            if (layout.Paper && items.Count > 0) y += gap;
+            paperBottom = y;
             navTop = items.Count == 0 ? 40 : y + 70;
             contentH = navTop + NavH;
             contentW = Math.Max(v.Width, dispW + 40);
@@ -1261,6 +1521,30 @@ namespace ComicShelf
         {
             Focus();
             base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left && mode != EditMode.None)
+            {
+                int hi = HitTest(e.Location);
+                if (hi < 0) return;
+                dragMouseY = e.Y;
+                if (mode == EditMode.Order)
+                {
+                    dragIdx = hi;
+                    dragGrabY = e.Y + sy - items[hi].Top;
+                    UpdateDrop();
+                }
+                else
+                {
+                    dragIdx = -1;
+                    spaceIdx = hi;
+                    spaceStartY = e.Y;
+                    spaceStartExtra = layout.ExtraOf(items[hi].Path);
+                }
+                Capture = true;
+                Cursor = mode == EditMode.Order ? Cursors.Hand : Cursors.SizeNS;
+                edgeTimer.Start();
+                Invalidate();
+                return;
+            }
             if (e.Button == MouseButtons.Left)
             {
                 panning = true;
@@ -1278,7 +1562,11 @@ namespace ComicShelf
             string path = it.Path;
             menu.Items.Clear();
             if (it.Kind == Kind.Image)
+            {
                 menu.Items.Add("그림 고치기 (브러시·자막·도형)", null, delegate { if (EditRequested != null) EditRequested(idx, path); });
+                menu.Items.Add("구글 이미지 번역 열기 (그림이 복사돼요)", null, delegate { if (GoogleImageRequested != null) GoogleImageRequested(idx, path); });
+                menu.Items.Add("번역된 그림으로 바꾸기… (받은 파일 고르기)", null, delegate { if (ReplaceRequested != null) ReplaceRequested(idx, path); });
+            }
             else if (it.Kind == Kind.Gif)
             {
                 var mi = new ToolStripMenuItem("움직이는 그림은 고칠 수 없어요");
@@ -1286,12 +1574,46 @@ namespace ComicShelf
                 menu.Items.Add(mi);
             }
             menu.Items.Add("이 그림 지우기 (휴지통으로)", null, delegate { if (DeleteRequested != null) DeleteRequested(idx, path); });
+            if (mode != EditMode.None)
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                if (layout.Border > 0)
+                {
+                    bool has = layout.HasBorder(path);
+                    menu.Items.Add(has ? "이 그림만 칸 테두리 빼기" : "이 그림에 칸 테두리 다시 넣기", null, delegate
+                    {
+                        string nm = System.IO.Path.GetFileName(path);
+                        if (has) layout.NoBorder.Add(nm); else layout.NoBorder.Remove(nm);
+                        Invalidate();
+                        if (LayoutChanged != null) LayoutChanged();
+                    });
+                }
+                if (layout.ExtraOf(path) > 0)
+                    menu.Items.Add("이 그림 위에 만든 빈 공간 없애기", null, delegate
+                    {
+                        layout.SetExtra(path, 0);
+                        Relayout();
+                        if (LayoutChanged != null) LayoutChanged();
+                    });
+            }
             menu.Show(this, e.Location);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (mode != EditMode.None && Capture)
+            {
+                dragMouseY = e.Y;
+                if (dragIdx >= 0) { UpdateDrop(); Invalidate(); }
+                else if (spaceIdx >= 0)
+                {
+                    int add = (int)Math.Round((e.Y - spaceStartY) / Math.Max(0.01, LScale));
+                    layout.SetExtra(items[spaceIdx].Path, Math.Max(0, spaceStartExtra + add));
+                    Relayout();
+                }
+                return;
+            }
             if (!panning) return;
             SetScrollX(panSx - (e.X - panStart.X));
             SetScrollY(panSy - (e.Y - panStart.Y));
@@ -1300,10 +1622,107 @@ namespace ComicShelf
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            if (mode != EditMode.None && (dragIdx >= 0 || spaceIdx >= 0))
+            {
+                edgeTimer.Stop();
+                Capture = false;
+                Cursor = Cursors.Default;
+                if (dragIdx >= 0)
+                {
+                    int from = dragIdx, to = dropIdx;
+                    dragIdx = -1; dropIdx = -1;
+                    if (to >= 0 && to != from && to != from + 1)
+                    {
+                        var list = Paths;
+                        string moving = list[from];
+                        list.RemoveAt(from);
+                        list.Insert(to > from ? to - 1 : to, moving);
+                        if (OrderChanged != null) OrderChanged(list);
+                    }
+                    Invalidate();
+                }
+                else
+                {
+                    spaceIdx = -1;
+                    if (LayoutChanged != null) LayoutChanged();
+                }
+                return;
+            }
             if (!panning) return;
             panning = false;
             Capture = false;
             Cursor = Cursors.Default;
+        }
+
+        // 끌고 있는 그림을 어디에 놓을지: 그 사이 번호 (0 = 맨 앞, Count = 맨 뒤)
+        void UpdateDrop()
+        {
+            int y = dragMouseY + sy;
+            int k = 0;
+            for (int i = 0; i < items.Count; i++)
+                if (y > items[i].Top + items[i].Height / 2) k = i + 1;
+            dropIdx = k;
+        }
+
+        // 편집 중 표시: 번호, 빈 공간 크기
+        void DrawEditMarks(Graphics g, int i, Rectangle r)
+        {
+            var it = items[i];
+            string tag = (i + 1).ToString();
+            using (var f = Theme.F(13f, FontStyle.Bold))
+            {
+                var sz = TextRenderer.MeasureText(tag, f);
+                var br = new Rectangle(r.X + 8, r.Y + 8, sz.Width + 12, sz.Height + 6);
+                using (var bg = new SolidBrush(Color.FromArgb(210, Theme.Accent))) g.FillRectangle(bg, br);
+                TextRenderer.DrawText(g, tag, f, br, Color.FromArgb(30, 20, 10), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+            int ex = layout.ExtraOf(it.Path);
+            if (ex > 0)
+            {
+                int gh = (int)Math.Round(ex * LScale);
+                var gr = new Rectangle(r.X, r.Y - gh, r.Width, gh);
+                using (var hb = new System.Drawing.Drawing2D.HatchBrush(HatchStyle.BackwardDiagonal, Color.FromArgb(90, Theme.Accent), Color.Transparent))
+                    g.FillRectangle(hb, gr);
+                if (gh >= 20)
+                    TextRenderer.DrawText(g, "빈 공간 " + ex, Theme.F(10f), gr, Theme.Accent, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            }
+            if (dragIdx == i)
+                using (var dim = new SolidBrush(Color.FromArgb(150, 20, 20, 24))) g.FillRectangle(dim, r);
+        }
+
+        // 끄는 중: 놓일 자리 주황 줄 + 손에 든 그림
+        void DrawDrag(Graphics g, int left)
+        {
+            if (dropIdx >= 0)
+            {
+                int y;
+                if (items.Count == 0) y = 0;
+                else if (dropIdx >= items.Count) y = items[items.Count - 1].Top + items[items.Count - 1].Height;
+                else y = items[dropIdx].Top;
+                y -= sy;
+                using (var b = new SolidBrush(Theme.Accent)) g.FillRectangle(b, left - 20, y - 4, dispW + 40, 8);
+            }
+            var it = items[dragIdx];
+            // 손에 든 그림은 작게 (높이 최대 240)
+            int w = Math.Max(60, InnerW / 3), h = Math.Max(20, it.Height * w / Math.Max(1, InnerW));
+            if (h > 240) { w = Math.Max(30, w * 240 / h); h = 240; }
+            var r = new Rectangle(left + inset + (InnerW - w) / 2, dragMouseY - Math.Min(h - 10, dragGrabY * w / Math.Max(1, InnerW)), w, h);
+            if (it.Cache == null && it.Source == null && it.Kind == Kind.Image)
+            {
+                try { it.Source = it.Edited ? Edits.Compose(it.Path) : Pics.Load(it.Path); } catch { }
+            }
+            Image img = it.Cache != null ? (Image)it.Cache : it.Source;
+            if (img != null && it.Kind == Kind.Image)
+            {
+                var cm = new System.Drawing.Imaging.ColorMatrix(); cm.Matrix33 = 0.75f;
+                using (var ia = new System.Drawing.Imaging.ImageAttributes())
+                {
+                    ia.SetColorMatrix(cm);
+                    g.DrawImage(img, r, 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, ia);
+                }
+            }
+            else g.FillRectangle(Brushes.DimGray, r);
+            using (var p = new Pen(Theme.Accent, 3)) g.DrawRectangle(p, r);
         }
 
         int HitTest(Point p)
@@ -1376,8 +1795,8 @@ namespace ComicShelf
             {
                 var it = items[i];
                 if (it.Kind != Kind.Video) continue;
-                var r = new Rectangle(left, it.Top - sy, dispW, it.Height);
-                bool vis = r.Bottom > 0 && r.Top < v.Height && r.Right > 0 && r.Left < v.Width;
+                var r = new Rectangle(left + inset, it.Top - sy, InnerW, it.Height);
+                bool vis = r.Bottom > 0 && r.Top < v.Height && r.Right > 0 && r.Left < v.Width && mode == EditMode.None;
                 if (vis && it.Box == null) CreateBox(it, i);
                 if (it.Box != null)
                 {
@@ -1442,7 +1861,10 @@ namespace ComicShelf
             g.Clear(BackColor);
             var v = View;
             int left = StripLeft;
+            if (layout.Paper && items.Count > 0)
+                using (var pb = new SolidBrush(layout.BackColor)) g.FillRectangle(pb, left, -sy, dispW, paperBottom);
             int first = -1, last = -1;
+            int bw = layout.Border > 0 ? Math.Max(1, (int)Math.Round(layout.Border * LScale)) : 0;
             for (int i = 0; i < items.Count; i++)
             {
                 var it = items[i];
@@ -1450,11 +1872,24 @@ namespace ComicShelf
                 if (y + it.Height < 0 || y > v.Height) continue;
                 if (first < 0) first = i;
                 last = i;
-                var r = new Rectangle(left, y, dispW, it.Height);
+                var r = new Rectangle(left + inset, y, InnerW, it.Height);
                 if (it.Kind == Kind.Image) DrawStill(g, it, r);
                 else if (it.Kind == Kind.Gif) DrawGif(g, it, r);
-                else g.FillRectangle(Brushes.Black, r);
+                else
+                {
+                    g.FillRectangle(Brushes.Black, r);
+                    if (mode != EditMode.None)
+                        TextRenderer.DrawText(g, "▶ 영상", Theme.F(14f, FontStyle.Bold), r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                }
+                if (bw > 0 && layout.HasBorder(it.Path))
+                    using (var pen = new Pen(layout.BorderColor, bw))
+                    {
+                        pen.Alignment = PenAlignment.Inset;
+                        g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+                    }
+                if (mode != EditMode.None) DrawEditMarks(g, i, r);
             }
+            if (dragIdx >= 0) DrawDrag(g, left);
             if (items.Count > 0 && EndText.Length > 0)
             {
                 var er = new Rectangle(left, navTop - 56 - sy, dispW, 36);
@@ -1473,7 +1908,7 @@ namespace ComicShelf
 
         void DrawStill(Graphics g, Item it, Rectangle r)
         {
-            if (it.Cache != null && it.CacheW == dispW && !fast) { g.DrawImageUnscaled(it.Cache, r.X, r.Y); return; }
+            if (it.Cache != null && it.CacheW == r.Width && !fast) { g.DrawImageUnscaled(it.Cache, r.X, r.Y); return; }
             if (it.Source == null)
             {
                 try { it.Source = it.Edited ? Edits.Compose(it.Path) : Pics.Load(it.Path); } catch { it.Source = null; }
@@ -1489,7 +1924,7 @@ namespace ComicShelf
             }
             if (it.Cache != null) it.Cache.Dispose();
             it.Cache = Pics.Scale(it.Source, r.Width, r.Height);
-            it.CacheW = dispW;
+            it.CacheW = r.Width;
             g.DrawImageUnscaled(it.Cache, r.X, r.Y);
         }
 

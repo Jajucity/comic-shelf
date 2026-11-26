@@ -142,6 +142,7 @@ namespace ComicShelf
         public bool Boxed;               // 칸 자막(번역 자막)
         public bool Outline;             // 글자 테두리
         public Color OutlineColor = Color.White;
+        public string FontName = "맑은 고딕";   // 자막 글씨체
         public float Width = 4;          // 도형 선 굵기
 
         public bool IsText { get { return Type == "text"; } }
@@ -155,7 +156,21 @@ namespace ComicShelf
         static readonly Graphics measure = Graphics.FromImage(new Bitmap(1, 1));
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        public static Font MakeFont(float px) { return new Font("맑은 고딕", Math.Max(4f, px), FontStyle.Bold, GraphicsUnit.Pixel); }
+        public static Font MakeFont(float px) { return MakeFont(px, "맑은 고딕"); }
+        public static Font MakeFont(float px, string name)
+        {
+            // 굵게가 없는 글씨체도 있어서 차례로 시도
+            foreach (var st in new[] { FontStyle.Bold, FontStyle.Regular })
+            {
+                try
+                {
+                    var ff = new FontFamily(string.IsNullOrEmpty(name) ? "맑은 고딕" : name);
+                    if (ff.IsStyleAvailable(st)) return new Font(ff, Math.Max(4f, px), st, GraphicsUnit.Pixel);
+                }
+                catch { }
+            }
+            return new Font("맑은 고딕", Math.Max(4f, px), FontStyle.Bold, GraphicsUnit.Pixel);
+        }
 
         public static RectangleF Norm(RectangleF r)
         {
@@ -169,7 +184,7 @@ namespace ComicShelf
             var r = Norm(o.R);
             while (px > 8)
             {
-                using (var f = MakeFont(px))
+                using (var f = MakeFont(px, o.FontName))
                 {
                     var m = measure.MeasureString(o.Text, f, (int)Math.Max(1, r.Width), fmt);
                     if (m.Height <= r.Height && m.Width <= r.Width) break;
@@ -183,7 +198,7 @@ namespace ComicShelf
         {
             if (o.IsText && !o.Boxed)
             {
-                using (var f = MakeFont(o.FontPx))
+                using (var f = MakeFont(o.FontPx, o.FontName))
                 {
                     var sz = measure.MeasureString(o.Text.Length == 0 ? " " : o.Text, f);
                     return new RectangleF(o.R.X, o.R.Y, sz.Width, sz.Height);
@@ -224,10 +239,10 @@ namespace ComicShelf
                     fmt.Alignment = StringAlignment.Center;
                     fmt.LineAlignment = StringAlignment.Center;
                     float px = FitPx(o, fmt);
-                    using (var f = MakeFont(px))
+                    using (var f = MakeFont(px, o.FontName))
                     using (var path = new GraphicsPath())
                     {
-                        path.AddString(o.Text, f.FontFamily, (int)FontStyle.Bold, px, r, fmt);
+                        path.AddString(o.Text, f.FontFamily, (int)f.Style, px, r, fmt);
                         PaintTextPath(g, path, o, px);
                     }
                 }
@@ -235,10 +250,10 @@ namespace ComicShelf
             else
             {
                 if (o.Text.Length == 0) return;
-                using (var f = MakeFont(o.FontPx))
+                using (var f = MakeFont(o.FontPx, o.FontName))
                 using (var path = new GraphicsPath())
                 {
-                    path.AddString(o.Text, f.FontFamily, (int)FontStyle.Bold, o.FontPx, new PointF(o.R.X, o.R.Y), StringFormat.GenericDefault);
+                    path.AddString(o.Text, f.FontFamily, (int)f.Style, o.FontPx, new PointF(o.R.X, o.R.Y), StringFormat.GenericDefault);
                     PaintTextPath(g, path, o, o.FontPx);
                 }
             }
@@ -408,7 +423,7 @@ namespace ComicShelf
                     o.R.X.ToString(Inv), o.R.Y.ToString(Inv), o.R.Width.ToString(Inv), o.R.Height.ToString(Inv),
                     o.FontPx.ToString(Inv), o.Color.ToArgb().ToString(Inv), o.Fill.ToArgb().ToString(Inv),
                     o.Filled ? "1" : "0", o.Boxed ? "1" : "0", o.Outline ? "1" : "0", o.Width.ToString(Inv), Esc(o.Text),
-                    o.OutlineColor.ToArgb().ToString(Inv)
+                    o.OutlineColor.ToArgb().ToString(Inv), Esc(o.FontName)
                 }));
                 sb.Append('\n');
             }
@@ -435,6 +450,7 @@ namespace ComicShelf
                     o.Width = float.Parse(p[12], Inv);
                     o.Text = Unesc(p[13]);
                     if (p.Length > 14) o.OutlineColor = Color.FromArgb(int.Parse(p[14], Inv));
+                    if (p.Length > 15 && p[15].Length > 0) o.FontName = Unesc(p[15]);
                     list.Add(o);
                 }
                 catch { }

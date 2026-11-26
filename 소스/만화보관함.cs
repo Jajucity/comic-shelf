@@ -365,11 +365,16 @@ namespace ComicShelf
             return next;
         }
 
-        // 화 안의 그림·움직이는 그림·영상 (넣은 순서)
+        // 화 안의 그림·움직이는 그림·영상 (넣은 순서, '편집'으로 순서를 바꿨으면 그 순서)
         public static List<string> EpisodeItems(Comic c, int n)
         {
             string d = EpisodeDir(c, n);
             if (!Directory.Exists(d)) return new List<string>();
+            return EpLayout.Apply(d, ItemsByName(d));
+        }
+
+        static List<string> ItemsByName(string d)
+        {
             return Directory.GetFiles(d)
                 .Where(f =>
                 {

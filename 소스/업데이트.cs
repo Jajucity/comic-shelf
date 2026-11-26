@@ -17,7 +17,7 @@ namespace ComicShelf
 {
     static class Updater
     {
-        public const string AppVersion = "5.3";            // 이 프로그램의 판
+        public const string AppVersion = "5.4";            // 이 프로그램의 판
         public const string Owner = "Jajucity";                 // GitHub 계정 이름 (비어 있으면 업데이트 확인 안 함)
         public const string Repo = "comic-shelf";       // GitHub 저장소 이름
         public const string AssetName = "ComicShelf.zip";
@@ -198,65 +198,6 @@ namespace ComicShelf
                 if (File.Exists(old)) File.Delete(old);
             }
             catch { }
-        }
-    }
-
-    // ───────────────────────── 설정 창 ─────────────────────────
-    class SettingsForm : Form
-    {
-        public SettingsForm()
-        {
-            Text = "설정";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false; MinimizeBox = false; ShowInTaskbar = false;
-            StartPosition = FormStartPosition.CenterParent;
-            BackColor = Theme.Bar; ForeColor = Theme.Text; Font = Theme.F(10.5f);
-            ClientSize = new Size(460, 250);
-
-            var ver = new Label();
-            ver.Text = "만화 보관함  " + Updater.AppVersion + " 판";
-            ver.Font = Theme.F(14f, FontStyle.Bold);
-            ver.AutoSize = true;
-            ver.Location = new Point(20, 18);
-            Controls.Add(ver);
-
-            var auto = new CheckBox();
-            auto.Text = "켤 때 새 판이 나왔는지 확인하기 (하루 한 번)";
-            auto.AutoSize = true;
-            auto.Location = new Point(22, 66);
-            auto.Checked = Updater.AutoCheck;
-            auto.Enabled = Updater.Configured;
-            auto.CheckedChanged += delegate { Updater.AutoCheck = auto.Checked; };
-            Controls.Add(auto);
-
-            var note = new Label();
-            note.Text = Updater.Configured
-                ? "확인할 때 이 컴퓨터의 정보는 보내지 않아요.\n최신 판 번호만 받아 와요."
-                : "업데이트를 받을 곳이 아직 정해지지 않은 판이에요.";
-            note.ForeColor = Theme.SubText;
-            note.Location = new Point(22, 96);
-            note.Size = new Size(420, 44);
-            Controls.Add(note);
-
-            var now = Theme.MakeButton("지금 새 판 확인하기", false);
-            now.Location = new Point(20, 150);
-            now.Enabled = Updater.Configured;
-            now.Click += delegate { Updater.CheckNow(this); };
-            Controls.Add(now);
-
-            if (Updater.Configured)
-            {
-                var site = Theme.MakeButton("다운로드 사이트 열기", false);
-                site.Location = new Point(220, 150);
-                site.Click += delegate { try { Process.Start(Updater.SiteUrl); } catch { } };
-                Controls.Add(site);
-            }
-
-            var close = Theme.MakeButton("닫기", true);
-            close.DialogResult = DialogResult.Cancel;
-            Controls.Add(close);
-            CancelButton = close;
-            Shown += delegate { close.Location = new Point(ClientSize.Width - 20 - close.Width, 200); };
         }
     }
 }

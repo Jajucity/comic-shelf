@@ -107,6 +107,7 @@ namespace ComicShelf
         readonly List<ShapeButton> shapeButtons = new List<ShapeButton>();
         readonly TrackBar sizeBar;
         readonly NumericUpDown fontBox;
+        readonly ComboBox fontPick;
         readonly CheckBox outlineCheck, coverCheck, fillCheck;
         readonly Button colorBtn, fillBtn, outlineBtn, undoBtn;
         readonly Label help, zoomLabel;
@@ -257,6 +258,33 @@ namespace ComicShelf
             fontBox.Width = 214;
             fontBox.Font = Theme.F(11f);
             tools.Controls.Add(fontBox);
+            tools.Controls.Add(Head("자막 글씨체"));
+            fontPick = new ComboBox();
+            fontPick.DropDownStyle = ComboBoxStyle.DropDownList;
+            fontPick.Width = 214;
+            fontPick.Font = Theme.F(10.5f);
+            fontPick.AccessibleName = "자막 글씨체";
+            // 한글 이름이 있는 글씨체(한글 글씨체)를 먼저, 맑은 고딕을 맨 위에
+            // 글씨체의 한국어 이름(언어 번호 1042)으로 찾음 — 윈도우가 영어여도 한글 글씨체를 찾게
+            var fams = new System.Drawing.Text.InstalledFontCollection().Families
+                .Select(f => { string k = f.GetName(1042); return k.Any(ch => ch >= 0xAC00 && ch <= 0xD7A3) ? k : (f.Name.Contains(" KR") || f.Name.StartsWith("Nanum") || f.Name.StartsWith("Pretendard") ? f.Name : null); })
+                .Where(n => n != null).Distinct().OrderBy(n => n == "맑은 고딕" ? "" : n).ToList();
+            if (!fams.Contains("맑은 고딕")) fams.Insert(0, "맑은 고딕");
+            foreach (var n in fams) fontPick.Items.Add(n);
+            string lastFont = Edits.Get("자막글씨체", "맑은 고딕");
+            fontPick.SelectedItem = fams.Contains(lastFont) ? lastFont : "맑은 고딕";
+            fontPick.SelectedIndexChanged += delegate
+            {
+                Edits.Set("자막글씨체", fontPick.Text);
+                if (selected != null && selected.IsText && tool == Tool.Select)
+                {
+                    PushUndo();
+                    selected.FontName = fontPick.Text;
+                    changed = true;
+                    canvas.Invalidate();
+                }
+            };
+            tools.Controls.Add(fontPick);
             outlineCheck = MakeCheck("자막 글자에 테두리 (테두리 색)", false);
             tools.Controls.Add(outlineCheck);
             coverCheck = MakeCheck("번역 자막을 흰 칸으로 덮기", true);
@@ -886,6 +914,7 @@ namespace ComicShelf
             o.R = new RectangleF(at.X, at.Y, 0, 0);
             o.Text = text;
             o.FontPx = (float)fontBox.Value;
+            o.FontName = fontPick.Text;
             o.Color = color;
             o.Outline = outlineCheck.Checked;
             o.OutlineColor = outlineColor;
@@ -897,10 +926,17 @@ namespace ComicShelf
 
         void PlaceCover(RectangleF r)
         {
-            string text = TextPrompt.Ask(this, "번역 자막", coverCheck.Checked
-                ? "고른 칸에 넣을 글(번역한 글)을 적어 주세요.\n칸은 흰색으로 덮여요. 비워 두면 덮기만 해요."
-                : "고른 칸에 넣을 글(번역한 글)을 적어 주세요.\n흰 칸 없이 글자만 들어가요.");
-            if (text == null) return;
+            // 고른 칸의 그림을 잘라 번역 창에 보여 줌 (원문 읽기·번역 미리 채우기)
+            string text;
+            var cr = Rectangle.Round(r);
+            cr.Intersect(new Rectangle(0, 0, baseImg.Width, baseImg.Height));
+            if (cr.Width < 2 || cr.Height < 2) return;
+            using (var crop = baseImg.Clone(cr, PixelFormat.Format32bppArgb))
+            using (var dlg = new TranslateDialog(crop, baseImg, coverCheck.Checked))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                text = dlg.Result;
+            }
             if (!coverCheck.Checked && text.Trim().Length == 0) return;
             var o = new Obj();
             o.Type = "text";
@@ -908,6 +944,7 @@ namespace ComicShelf
             o.R = r;
             o.Text = text;
             o.FontPx = (float)fontBox.Value;
+            o.FontName = fontPick.Text;
             o.Color = color;
             o.Fill = Color.White;
             o.Filled = coverCheck.Checked;

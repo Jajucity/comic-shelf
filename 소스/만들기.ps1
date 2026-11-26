@@ -60,7 +60,7 @@ $bw.Close()
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $exe = if ($env:COMIC_OUT) { $env:COMIC_OUT } else { Join-Path $out '만화 보관함.exe' }
 & $csc /nologo /target:winexe /optimize+ /codepage:65001 "/out:$exe" "/win32icon:$ico" `
-    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.VisualBasic.dll /r:System.Core.dll /r:Microsoft.CSharp.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.VisualBasic.dll /r:System.Core.dll /r:Microsoft.CSharp.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll /r:System.Security.dll `
     (Get-ChildItem $src -Filter *.cs | % FullName)
 if ($LASTEXITCODE -ne 0) { throw "컴파일 실패" }
 "만들기 끝: $exe"
