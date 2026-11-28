@@ -25,6 +25,7 @@ namespace ComicShelf
         [STAThread]
         static void Main()
         {
+            WebParts.Hook();   // exe 안에 넣어 둔 유튜브 재생 부품을 찾을 수 있게
             try { SetProcessDPIAware(); } catch { }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -143,7 +144,7 @@ namespace ComicShelf
             string e = Path.GetExtension(path).ToLowerInvariant();
             if (ImageExts.Contains(e)) return Kind.Image;
             if (GifExts.Contains(e)) return Kind.Gif;
-            if (VideoExts.Contains(e)) return Kind.Video;
+            if (VideoExts.Contains(e) || e == YtLink.Ext) return Kind.Video;   // .youtube = 유튜브 링크 장면
             if (MusicExts.Contains(e)) return Kind.Music;
             return Kind.None;
         }
@@ -165,9 +166,12 @@ namespace ComicShelf
             }
         }
 
+        public static bool IsYouTube(string path) { return Path.GetExtension(path).ToLowerInvariant() == YtLink.Ext; }
+
         // 영상의 가로·세로 크기 (윈도우 탐색기가 아는 값). 모르면 16:9
         public static Size VideoSize(string path)
         {
+            if (IsYouTube(path)) { var l = YtLink.Load(path); return new Size(l.W, l.H); }
             try
             {
                 dynamic sh = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application"));

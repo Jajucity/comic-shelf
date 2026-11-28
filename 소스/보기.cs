@@ -50,6 +50,9 @@ namespace ComicShelf
             view.EditRequested += EditItem;
             view.GoogleImageRequested += GoogleImage;
             view.ReplaceRequested += ReplaceWithTranslated;
+#if YT_DOWNLOAD
+            view.YtSaveRequested += delegate(int i, string p) { SaveYouTube(p); };
+#endif
             lay = EpLayout.Load(Store.EpisodeDir(comic, ep));
             view.EpisodeLayout = lay;
             view.OrderChanged += delegate(List<string> list)
@@ -143,6 +146,7 @@ namespace ComicShelf
             var addMenu = new ContextMenuStrip();
             addMenu.Font = Theme.F(11f);
             addMenu.Items.Add("파일에서 넣기 (그림·영상·음악)", null, delegate { AddItem(); });
+            addMenu.Items.Add("유튜브 링크로 넣기…", null, delegate { AddYouTube(); });
             addMenu.Items.Add("새 캔버스 만들기 (빈 그림)", null, delegate { NewCanvas(); });
             add.Click += delegate { addMenu.Show(add, new Point(0, add.Height)); };
             bar.RightArea.Controls.Add(zoomLabel);
@@ -432,6 +436,87 @@ namespace ComicShelf
             }
         }
 
+        // ── 유튜브 링크로 넣기: 유튜브로 보기(링크 장면) / 받아서 영상으로 넣기 ──
+        void AddYouTube()
+        {
+            string url; bool save; int maxH;
+            using (var d = new YtAddDialog())
+            {
+                if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
+                url = d.Url; save = d.SaveVideo; maxH = d.MaxHeight;
+            }
+#if YT_DOWNLOAD
+            if (save) { string f = DownloadYouTube(url, maxH); if (f != null) AddDownloaded(f, null); return; }
+#endif
+            YtLink link;
+            var form = FindForm();
+            Cursor old = form.Cursor;
+            form.Cursor = Cursors.WaitCursor;
+            try { link = YtLink.Fetch(url); }
+            catch (Exception ex) { form.Cursor = old; MessageBox.Show(form, ex.Message, "유튜브 링크로 넣기"); return; }
+            form.Cursor = old;
+            string tmp = Path.Combine(Path.GetTempPath(), "만화보관함_" + Guid.NewGuid().ToString("N") + YtLink.Ext);
+            try { link.Save(tmp); Store.AddItem(comic, ep, tmp); }
+            catch (Exception ex) { MessageBox.Show(form, "넣지 못했어요.\n" + ex.Message, "유튜브 링크로 넣기"); return; }
+            finally { try { File.Delete(tmp); } catch { } }
+            view.SetItems(Store.EpisodeItems(comic, ep));
+            view.ScrollToLast();
+            view.Focus();
+        }
+
+#if YT_DOWNLOAD
+        // 받기 도구 확인 → 영상 받기. 받은 파일 경로(임시 폴더)를 돌려줌, 못 받으면 null
+        string DownloadYouTube(string url, int maxH)
+        {
+            var owner = FindForm();
+            if (!YtDl.EnsureInstalled(owner)) return null;
+            string file = null;
+            using (var f = new WorkForm("유튜브 영상 받기", delegate(Action<string, string> report) { file = YtDl.Fetch(url, maxH, report); }, YtDl.Cancel, "영상 받기를 그만둘까요?"))
+            {
+                f.ShowDialog(owner);
+                if (f.Error is OperationCanceledException) return null;
+                if (f.Error != null) { MessageBox.Show(owner, f.Error.Message, "유튜브 영상 받기"); return null; }
+            }
+            return file;
+        }
+
+        // 받은 영상을 화에 넣음. replacing 이 있으면 그 장면 자리에 넣고 그 장면은 휴지통으로
+        void AddDownloaded(string file, string replacing)
+        {
+            string added = null;
+            try { added = Store.AddItem(comic, ep, file); }
+            catch (Exception ex) { MessageBox.Show(FindForm(), "넣지 못했어요.\n" + ex.Message, "유튜브 영상 받기"); }
+            finally { try { Directory.Delete(Path.GetDirectoryName(file), true); } catch { } }
+            if (added == null) return;
+            if (replacing != null)
+            {
+                var order = view.Paths;
+                int i = order.IndexOf(replacing);
+                if (i >= 0) { order[i] = added; SaveLayout(order); }
+                view.ReleaseAll();
+                try { Store.DeleteItem(replacing); } catch { }
+                view.SetItems(Store.EpisodeItems(comic, ep));
+            }
+            else
+            {
+                view.SetItems(Store.EpisodeItems(comic, ep));
+                view.ScrollToLast();
+            }
+            view.Focus();
+        }
+
+        void SaveYouTube(string path)
+        {
+            var link = YtLink.Load(path);
+            var r = MessageBox.Show(FindForm(),
+                "'" + link.Title + "' 을(를) 받아서 보통 영상 장면으로 바꿀까요?\n\n광고 없이, 인터넷 없이 볼 수 있어요. 받은 뒤 링크 장면은 휴지통으로 가요.\n유튜브 규칙상 다운로드는 금지라서, 내가 올린 영상이나 허락된 영상에만 써 주세요.",
+                "받아서 영상으로 바꾸기", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (r != DialogResult.Yes) return;
+            string f = DownloadYouTube(link.WatchUrl, new[] { 480, 720, 1080 }[Math.Max(0, Math.Min(2, Edits.GetInt("유튜브화질", 2)))]);
+            if (f != null) AddDownloaded(f, path);
+        }
+#endif
+
         // 이 화 그림들의 너비 (가장 많은 것). 없으면 800
         int CanvasWidth()
         {
@@ -488,7 +573,7 @@ namespace ComicShelf
 
         void DeleteItem(int index, string path)
         {
-            string what = Media.KindOf(path) == Kind.Video ? "영상" : "그림";
+            string what = Media.IsYouTube(path) ? "유튜브 장면" : Media.KindOf(path) == Kind.Video ? "영상" : "그림";
             var r = MessageBox.Show(FindForm(),
                 (index + 1) + "번째 " + what + "을 지울까요?\n\n파일이 휴지통으로 가요. (휴지통에서 되살릴 수 있어요.)",
                 what + " 지우기", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
@@ -820,6 +905,9 @@ namespace ComicShelf
         const int BarH = 46;
 
         readonly string path;
+        readonly YtLink yt;        // 유튜브 링크 장면이면 (아니면 null)
+        YtPlayer ytPlayer;
+        string failText = "이 영상은 틀 수 없어요\n(윈도우 미디어 플레이어가 필요해요)";
         Bitmap poster;
         WmpHost player;
         bool failed, started, wasDown, downInVideo, cursorHidden;
@@ -842,7 +930,14 @@ namespace ComicShelf
             Cursor = Cursors.Hand;
             Text = "영상";
             if (volume < 0) volume = Edits.GetInt("영상소리", 80);
-            poster = ShellThumb.Get(path, 720);
+            if (Media.IsYouTube(path))
+            {
+                yt = YtLink.Load(path);
+                Text = "유튜브";
+                AccessibleName = "유튜브 영상: " + yt.Title;
+                poster = yt.ThumbImage();
+            }
+            else poster = ShellThumb.Get(path, 720);
 
             bar = new Panel();
             bar.BackColor = Color.FromArgb(22, 22, 26);
@@ -954,6 +1049,7 @@ namespace ComicShelf
             base.OnResize(e);
             bar.Bounds = new Rectangle(0, Height - BarH, Width, BarH);
             if (player != null) player.Bounds = ClientRectangle;
+            if (ytPlayer != null) ytPlayer.Bounds = ClientRectangle;
             bar.BringToFront();
         }
 
@@ -973,9 +1069,18 @@ namespace ComicShelf
             }
             if (failed)
             {
-                TextRenderer.DrawText(g, "이 영상은 틀 수 없어요\n(윈도우 미디어 플레이어가 필요해요)", Theme.F(11f), ClientRectangle, Color.White,
+                TextRenderer.DrawText(g, failText, Theme.F(11f), Rectangle.Inflate(ClientRectangle, -16, -10), Color.White,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
                 return;
+            }
+            if (yt != null)
+            {
+                // 위쪽에 유튜브 표시 + 제목
+                var tag = new Rectangle(12, 12, 74, 26);
+                using (var br = new SolidBrush(Color.FromArgb(230, 220, 30, 30))) using (var gp = Theme.Round(tag, 6)) g.FillPath(br, gp);
+                TextRenderer.DrawText(g, "▶ 유튜브", Theme.F(9.5f, FontStyle.Bold), tag, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                TextRenderer.DrawText(g, yt.Title, Theme.F(11f, FontStyle.Bold), new Rectangle(96, 12, Math.Max(10, Width - 108), 26), Color.White,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             }
             // 큰 재생 단추
             float cx = Width / 2f, cy = Height / 2f, rad = Math.Max(26, Math.Min(46, Math.Min(Width, Height) / 7f));
@@ -994,6 +1099,7 @@ namespace ComicShelf
         void Start()
         {
             if (started) return;
+            if (yt != null) { StartYt(); return; }
             try
             {
                 var p = new WmpHost();
@@ -1019,9 +1125,36 @@ namespace ComicShelf
             Invalidate();
         }
 
+        // 유튜브: 장면 안에 유튜브 공식 재생기를 띄움 (조작은 유튜브 재생기 것을 씀)
+        void StartYt()
+        {
+            try
+            {
+                var p = new YtPlayer(yt);
+                p.Bounds = ClientRectangle;
+                p.FullChanged += delegate(bool on) { if (on != IsFull && FullToggle != null) FullToggle(this); };
+                p.Failed += delegate(string msg)
+                {
+                    failText = msg;
+                    failed = true;
+                    if (ytPlayer != null) { Controls.Remove(ytPlayer); ytPlayer.Dispose(); ytPlayer = null; }
+                    Invalidate();
+                };
+                p.ContextMenuStrip = ContextMenuStrip;
+                Controls.Add(p);
+                ytPlayer = p;
+                started = true;
+            }
+            catch (Exception ex) { failText = "유튜브 재생기를 켜지 못했어요.\n" + ex.Message; failed = true; }
+            Invalidate();
+        }
+
+        public bool IsYouTube { get { return yt != null; } }
+
         public void TogglePlay()
         {
             if (!started) { Start(); return; }
+            if (yt != null) return;   // 유튜브는 재생기 안에서 (스페이스·클릭)
             try
             {
                 if (State == 3) O.controls.pause();
@@ -1040,12 +1173,13 @@ namespace ComicShelf
 
         public void Pause()
         {
+            if (ytPlayer != null) { ytPlayer.Pause(); return; }
             try { if (State == 3) O.controls.pause(); } catch { }
         }
 
         public void SeekBy(double sec)
         {
-            if (!started) return;
+            if (!started || yt != null) return;
             try
             {
                 double d = Duration;
@@ -1129,6 +1263,7 @@ namespace ComicShelf
                     player.Dispose();
                     player = null;
                 }
+                if (ytPlayer != null) { ytPlayer.Dispose(); ytPlayer = null; }
                 if (poster != null) { poster.Dispose(); poster = null; }
             }
             base.Dispose(disposing);
@@ -1177,6 +1312,7 @@ namespace ComicShelf
         public event Action<int, string> EditRequested;
         public event Action<int, string> GoogleImageRequested;
         public event Action<int, string> ReplaceRequested;
+        public event Action<int, string> YtSaveRequested;   // 유튜브 링크 장면을 받은 영상으로 바꾸기
         public event Action ZoomChanged;
         public event Action<bool> VideoFullChanged;
         VideoBox fullBox;
@@ -1499,6 +1635,15 @@ namespace ComicShelf
             if (ZoomChanged != null) ZoomChanged();
         }
 
+        public bool IsVideoFull { get { return fullBox != null; } }
+
+        // 유튜브 재생기 위에서 굴린 휠 (화면 좌표로 옴)
+        public void WheelFromOutside(Point screen, int delta)
+        {
+            if (IsDisposed || fullBox != null) return;
+            HandleWheel(PointToClient(screen), delta);
+        }
+
         void HandleWheel(Point p, int delta)
         {
             if ((ModifierKeys & Keys.Control) != 0)
@@ -1817,7 +1962,18 @@ namespace ComicShelf
             var m = new ContextMenuStrip();
             m.Font = Theme.F(10.5f);
             string path = it.Path;
-            m.Items.Add("이 영상 지우기 (휴지통으로)", null, delegate { if (DeleteRequested != null) DeleteRequested(index, path); });
+            if (b.IsYouTube)
+            {
+                m.Items.Add("유튜브에서 열기 (인터넷 창)", null, delegate
+                {
+                    try { System.Diagnostics.Process.Start(YtLink.Load(path).WatchUrl); } catch { }
+                });
+#if YT_DOWNLOAD
+                m.Items.Add("받아서 영상으로 바꾸기 (광고 없이)", null, delegate { if (YtSaveRequested != null) YtSaveRequested(index, path); });
+#endif
+                m.Items.Add(new ToolStripSeparator());
+            }
+            m.Items.Add(b.IsYouTube ? "이 유튜브 장면 지우기 (휴지통으로)" : "이 영상 지우기 (휴지통으로)", null, delegate { if (DeleteRequested != null) DeleteRequested(index, path); });
             b.ContextMenuStrip = m;
             foreach (Control c in b.Controls) c.ContextMenuStrip = m;
             b.Disposed += delegate { m.Dispose(); };
@@ -1879,7 +2035,7 @@ namespace ComicShelf
                 {
                     g.FillRectangle(Brushes.Black, r);
                     if (mode != EditMode.None)
-                        TextRenderer.DrawText(g, "▶ 영상", Theme.F(14f, FontStyle.Bold), r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                        TextRenderer.DrawText(g, Media.IsYouTube(it.Path) ? "▶ 유튜브" : "▶ 영상", Theme.F(14f, FontStyle.Bold), r, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 }
                 if (bw > 0 && layout.HasBorder(it.Path))
                     using (var pen = new Pen(layout.BorderColor, bw))

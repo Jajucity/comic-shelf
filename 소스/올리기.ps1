@@ -29,7 +29,8 @@ try {
     # 2) 공개할 파일만 복사 (목록 방식)
     foreach ($d in '소스', 'docs') { if (Test-Path $d) { Remove-Item -Recurse -Force $d } }
     New-Item -ItemType Directory -Force '소스', 'docs' | Out-Null
-    Get-ChildItem $src -File | Where-Object { $_.Extension -in '.cs', '.ps1' } | Copy-Item -Destination '소스'
+    # 유튜브 '받아서 넣기'(유튜브받기.cs)는 내 컴퓨터 판에만 — 공개 저장소에 올리지 않음
+    Get-ChildItem $src -File | Where-Object { $_.Extension -in '.cs', '.ps1' -and $_.Name -ne '유튜브받기.cs' } | Copy-Item -Destination '소스'
     Copy-Item -Recurse (Join-Path $base 'docs\*') 'docs'
     @"
 # 만화 보관함
@@ -63,8 +64,9 @@ finally { Pop-Location }
 $stage = Join-Path $env:TEMP ("만화보관함_판_" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force (Join-Path $stage '만화 보관함') | Out-Null
 $env:COMIC_OUT = Join-Path $stage '만화 보관함\만화 보관함.exe'
+$env:COMIC_PUBLIC = '1'   # 공개 판: 유튜브 '받아서 넣기' 빼고 빌드
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $src '만들기.ps1')
-Remove-Item Env:COMIC_OUT
+Remove-Item Env:COMIC_OUT, Env:COMIC_PUBLIC
 if (-not (Test-Path (Join-Path $stage '만화 보관함\만화 보관함.exe'))) { throw '빌드 실패' }
 @"
 만화 보관함 $ver
