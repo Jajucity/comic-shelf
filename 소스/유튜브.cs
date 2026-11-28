@@ -22,14 +22,7 @@ namespace ComicShelf
     class YtLink
     {
         public const string Ext = ".youtube";
-#if YT_DOWNLOAD
-        public const string SaveGuide = @"
-- 받아서 영상으로 넣기: 영상을 내 컴퓨터로 받아 보통 영상 장면으로 넣어요. 광고 없이, 인터넷 없이 봐요. 처음 한 번은 '받기 도구'(약 177MB)를 받아요. 유튜브로 보기로 넣은 장면도 오른쪽 클릭 → '받아서 영상으로 바꾸기'로 바꿀 수 있어요.
-- 유튜브 규칙상 다운로드는 금지라서, 내가 올린 영상이나 허락된 영상에만 써 주세요.
-- 받기가 안 되면 유튜브가 바뀐 것일 수 있어요. 첫 화면 '설정' → '일반'에서 받기 도구를 '다시 받기' 해 보세요.";
-#else
         public const string SaveGuide = "";
-#endif
         static readonly System.Web.Script.Serialization.JavaScriptSerializer Json = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         public string Url = "", Id = "", Title = "";
         public int W = 16, H = 9, Start;
@@ -478,25 +471,7 @@ c.addEventListener('mousedown',function(e){want=0;upd();if(e.button===0)cmd(st==
             Controls.Add(playRadio);
             Controls.Add(Note("장면 안에서 유튜브 재생기로 봐요. 인터넷이 있어야 하고, 광고는 유튜브 그대로 나와요. 파일이 거의 안 커요.", y + 26));
             y += 76;
-#if YT_DOWNLOAD
-            saveRadio = Radio("받아서 영상으로 넣기", y);
-            Controls.Add(saveRadio);
-            Controls.Add(Note("영상을 내 컴퓨터로 받아 보통 영상 장면처럼 넣어요. 광고 없이, 인터넷 없이 봐요.\n유튜브 규칙상 다운로드는 금지라서, 내가 올린 영상이나 허락된 영상에만 써 주세요.", y + 26));
-            var ql = new Label(); ql.Text = "화질"; ql.Location = new Point(44, y + 74); ql.AutoSize = true;
-            Controls.Add(ql);
-            quality = new ComboBox(); quality.DropDownStyle = ComboBoxStyle.DropDownList;
-            quality.Items.AddRange(new object[] { "480p (작게)", "720p", "1080p (크게)" });
-            quality.Location = new Point(90, y + 70); quality.Width = 150;
-            quality.SelectedIndex = Math.Max(0, Math.Min(2, Edits.GetInt("유튜브화질", 2)));
-            quality.AccessibleName = "화질";
-            Controls.Add(quality);
-            y += 112;
-            if (Edits.Get("유튜브방식", "보기") == "받기") saveRadio.Checked = true; else playRadio.Checked = true;
-            quality.Enabled = saveRadio.Checked;
-            saveRadio.CheckedChanged += delegate { quality.Enabled = saveRadio.Checked; };
-#else
             playRadio.Checked = true;
-#endif
             y += 8;
             var ok = Theme.MakeButton("넣기", true);
             var cancel = Theme.MakeButton("취소", false);

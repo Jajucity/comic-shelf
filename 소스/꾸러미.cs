@@ -1,4 +1,4 @@
-// 만화 보관함 — 만화 꾸러미 파일 (.comicpack) 로 다른 사람과 주고받기
+﻿// 만화 보관함 — 만화 꾸러미 파일 (.comicpack) 로 다른 사람과 주고받기
 // 꾸러미 = 만화 폴더를 통째로 담은 zip. 언제 봤는지 기록(기록.txt)은 빼고 담음.
 using System;
 using System.Collections.Generic;

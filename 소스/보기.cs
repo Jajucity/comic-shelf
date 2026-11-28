@@ -50,9 +50,6 @@ namespace ComicShelf
             view.EditRequested += EditItem;
             view.GoogleImageRequested += GoogleImage;
             view.ReplaceRequested += ReplaceWithTranslated;
-#if YT_DOWNLOAD
-            view.YtSaveRequested += delegate(int i, string p) { SaveYouTube(p); };
-#endif
             lay = EpLayout.Load(Store.EpisodeDir(comic, ep));
             view.EpisodeLayout = lay;
             view.OrderChanged += delegate(List<string> list)
@@ -445,9 +442,6 @@ namespace ComicShelf
                 if (d.ShowDialog(FindForm()) != DialogResult.OK) return;
                 url = d.Url; save = d.SaveVideo; maxH = d.MaxHeight;
             }
-#if YT_DOWNLOAD
-            if (save) { string f = DownloadYouTube(url, maxH); if (f != null) AddDownloaded(f, null); return; }
-#endif
             YtLink link;
             var form = FindForm();
             Cursor old = form.Cursor;
@@ -464,58 +458,6 @@ namespace ComicShelf
             view.Focus();
         }
 
-#if YT_DOWNLOAD
-        // 받기 도구 확인 → 영상 받기. 받은 파일 경로(임시 폴더)를 돌려줌, 못 받으면 null
-        string DownloadYouTube(string url, int maxH)
-        {
-            var owner = FindForm();
-            if (!YtDl.EnsureInstalled(owner)) return null;
-            string file = null;
-            using (var f = new WorkForm("유튜브 영상 받기", delegate(Action<string, string> report) { file = YtDl.Fetch(url, maxH, report); }, YtDl.Cancel, "영상 받기를 그만둘까요?"))
-            {
-                f.ShowDialog(owner);
-                if (f.Error is OperationCanceledException) return null;
-                if (f.Error != null) { MessageBox.Show(owner, f.Error.Message, "유튜브 영상 받기"); return null; }
-            }
-            return file;
-        }
-
-        // 받은 영상을 화에 넣음. replacing 이 있으면 그 장면 자리에 넣고 그 장면은 휴지통으로
-        void AddDownloaded(string file, string replacing)
-        {
-            string added = null;
-            try { added = Store.AddItem(comic, ep, file); }
-            catch (Exception ex) { MessageBox.Show(FindForm(), "넣지 못했어요.\n" + ex.Message, "유튜브 영상 받기"); }
-            finally { try { Directory.Delete(Path.GetDirectoryName(file), true); } catch { } }
-            if (added == null) return;
-            if (replacing != null)
-            {
-                var order = view.Paths;
-                int i = order.IndexOf(replacing);
-                if (i >= 0) { order[i] = added; SaveLayout(order); }
-                view.ReleaseAll();
-                try { Store.DeleteItem(replacing); } catch { }
-                view.SetItems(Store.EpisodeItems(comic, ep));
-            }
-            else
-            {
-                view.SetItems(Store.EpisodeItems(comic, ep));
-                view.ScrollToLast();
-            }
-            view.Focus();
-        }
-
-        void SaveYouTube(string path)
-        {
-            var link = YtLink.Load(path);
-            var r = MessageBox.Show(FindForm(),
-                "'" + link.Title + "' 을(를) 받아서 보통 영상 장면으로 바꿀까요?\n\n광고 없이, 인터넷 없이 볼 수 있어요. 받은 뒤 링크 장면은 휴지통으로 가요.\n유튜브 규칙상 다운로드는 금지라서, 내가 올린 영상이나 허락된 영상에만 써 주세요.",
-                "받아서 영상으로 바꾸기", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-            if (r != DialogResult.Yes) return;
-            string f = DownloadYouTube(link.WatchUrl, new[] { 480, 720, 1080 }[Math.Max(0, Math.Min(2, Edits.GetInt("유튜브화질", 2)))]);
-            if (f != null) AddDownloaded(f, path);
-        }
-#endif
 
         // 이 화 그림들의 너비 (가장 많은 것). 없으면 800
         int CanvasWidth()
@@ -1968,9 +1910,6 @@ namespace ComicShelf
                 {
                     try { System.Diagnostics.Process.Start(YtLink.Load(path).WatchUrl); } catch { }
                 });
-#if YT_DOWNLOAD
-                m.Items.Add("받아서 영상으로 바꾸기 (광고 없이)", null, delegate { if (YtSaveRequested != null) YtSaveRequested(index, path); });
-#endif
                 m.Items.Add(new ToolStripSeparator());
             }
             m.Items.Add(b.IsYouTube ? "이 유튜브 장면 지우기 (휴지통으로)" : "이 영상 지우기 (휴지통으로)", null, delegate { if (DeleteRequested != null) DeleteRequested(index, path); });

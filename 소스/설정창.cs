@@ -141,48 +141,6 @@ namespace ComicShelf
                 site.Click += delegate { try { Process.Start(Updater.SiteUrl); } catch { } };
                 p.Controls.Add(site);
             }
-#if YT_DOWNLOAD
-            // ── 유튜브 받기 도구 (내 컴퓨터 판에만) ──
-            p.Controls.Add(Head("유튜브 받기 도구 ('유튜브 링크로 넣기' → '받아서 영상으로 넣기')", 130));
-            p.Controls.Add(Note("yt-dlp·Deno·FFmpeg 이에요. 처음 받을 때 물어보고 받아요. 유튜브가 바뀌어서 받기가 안 되면 '다시 받기'로 새 판을 받아요. " +
-                                "(" + YtDl.SizeText + ", 저장 위치 " + YtDl.Dir + ")", 158, 86));
-            var yState = new Label(); yState.AutoSize = true; yState.Location = new Point(22, 250);
-            p.Controls.Add(yState);
-            var yGet = Theme.MakeButton("받기", true);
-            yGet.Location = new Point(22, 278);
-            p.Controls.Add(yGet);
-            var yDel = Theme.MakeButton("지우기 (휴지통으로)", false);
-            yDel.Location = new Point(160, 278);
-            p.Controls.Add(yDel);
-            Action yRefresh = delegate
-            {
-                bool ok = YtDl.Installed;
-                yState.Text = ok ? "받아 둠 ✓  " + YtDl.InstalledWhen : "아직 안 받음";
-                yState.ForeColor = ok ? Theme.Accent : Theme.SubText;
-                yGet.Text = ok ? "다시 받기" : "받기";
-                yDel.Enabled = ok || System.IO.Directory.Exists(YtDl.Dir);
-            };
-            yRefresh();
-            yGet.Click += delegate
-            {
-                if (MessageBox.Show(this, "유튜브 받기 도구를 " + (YtDl.Installed ? "새 판으로 다시 " : "") + "받을까요?\n\n" + YtDl.SizeText + "\n저장 위치: " + YtDl.Dir,
-                    "유튜브 받기 도구", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
-                using (var f = new WorkForm("유튜브 받기 도구 받기", YtDl.Install, YtDl.Cancel, "받기를 그만둘까요?"))
-                {
-                    f.ShowDialog(this);
-                    if (f.Error != null && !(f.Error is OperationCanceledException)) MessageBox.Show(this, "받지 못했어요.\n" + f.Error.Message, "유튜브 받기 도구");
-                }
-                yRefresh();
-            };
-            yDel.Click += delegate
-            {
-                if (MessageBox.Show(this, "유튜브 받기 도구(약 330MB)를 지울까요?\n휴지통으로 보내요. 이미 넣은 영상은 그대로 있어요.",
-                    "유튜브 받기 도구", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-                try { YtDl.Remove(); }
-                catch (Exception ex) { MessageBox.Show(this, "지우지 못했어요.\n" + ex.Message, "유튜브 받기 도구"); }
-                yRefresh();
-            };
-#endif
         }
 
         // ── AI 번역 (Claude · ChatGPT · Grok · Gemini) ──

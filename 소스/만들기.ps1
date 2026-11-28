@@ -64,9 +64,8 @@ $wv = Join-Path $src '부품\WebView2'
 foreach ($f in 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll') {
     if (-not (Test-Path (Join-Path $wv $f))) { throw "부품이 없어요: $wv\$f (NuGet Microsoft.Web.WebView2 에서 꺼내 두기)" }
 }
-# 유튜브 '받아서 넣기'는 내 컴퓨터 판에만 (공개 사이트 판은 COMIC_PUBLIC=1 로 빌드)
-$defs = if ($env:COMIC_PUBLIC -eq '1') { @() } else { @('/define:YT_DOWNLOAD') }
-$files = Get-ChildItem $src -Filter *.cs | Where-Object { -not ($env:COMIC_PUBLIC -eq '1' -and $_.Name -eq '유튜브받기.cs') } | % FullName
+$defs = @()
+$files = Get-ChildItem $src -Filter *.cs | % FullName
 & $csc /nologo /target:winexe /optimize+ /codepage:65001 "/out:$exe" "/win32icon:$ico" $defs `
     /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:Microsoft.VisualBasic.dll /r:System.Core.dll /r:Microsoft.CSharp.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll /r:System.Security.dll `
     "/r:$wv\Microsoft.Web.WebView2.Core.dll" "/r:$wv\Microsoft.Web.WebView2.WinForms.dll" `
